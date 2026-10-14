@@ -17,15 +17,15 @@ class Circle {
         this.color = color;
         this.text = text;
         this.speed = speed;
-        this.dx = 1 * this.speed;
-        this.dy = 1 * this.speed;
+        this.dx = (Math.random() - 0.5) * 2 * this.speed; // Dirección aleatoria en X
+        this.dy = (Math.random() - 0.5) * 2 * this.speed; // Dirección aleatoria en Y
         this.isColliding = false; // Estado de colisión
     }
 
     draw(context) {
         context.beginPath();
         
-        // Cambiar a color azul si está en colisión, de lo contrario usar el original
+        // Cambiar a color azul si está en colisión (efecto flash), de lo contrario usar el original
         if (this.isColliding) {
             context.strokeStyle = "#0000FF";
         } else {
@@ -59,6 +59,42 @@ class Circle {
             this.dy = -this.dy;
         }
     }
+
+    // Método para manejar el rebote físico entre dos círculos
+    resolveCollision(other) {
+        let dx = other.posX - this.posX;
+        let dy = other.posY - this.posY;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        let minDist = this.radius + other.radius;
+
+        if (distance < minDist) {
+            // Activamos estado de colisión para el efecto "flash" azul
+            this.isColliding = true;
+            other.isColliding = true;
+
+            // Ángulo de la colisión
+            let angle = Math.atan2(dy, dx);
+
+            // Separar los círculos para evitar que se queden trabados (overlap resolution)
+            let overlap = minDist - distance;
+            let correctionX = (overlap / 2) * Math.cos(angle);
+            let correctionY = (overlap / 2) * Math.sin(angle);
+
+            this.posX -= correctionX;
+            this.posY -= correctionY;
+            other.posX += correctionX;
+            other.posY += correctionY;
+
+            // Intercambio de velocidades vectoriales para el rebote elástico (asumiendo masas iguales)
+            let tempDx = this.dx;
+            let tempDy = this.dy;
+
+            this.dx = other.dx;
+            this.dy = other.dy;
+            other.dx = tempDx;
+            other.dy = tempDy;
+        }
+    }
 }
 
 // Crear un array para almacenar N círculos
@@ -77,42 +113,25 @@ function generateCircles(n) {
     }
 }
 
-// Función para detectar colisiones entre círculos usando la fórmula de distancias
-function checkCollisions() {
-    // Primero, asumimos que ningún círculo está colisionando al inicio del fotograma
-    for (let i = 0; i < circles.length; i++) {
-        circles[i].isColliding = false;
-    }
-
-    // Comparamos cada par de círculos únicos
-    for (let i = 0; i < circles.length; i++) {
-        for (let j = i + 1; j < circles.length; j++) {
-            let circleA = circles[i];
-            let circleB = circles[j];
-
-            // Fórmula de distancia entre los centros: d = sqrt((x2 - x1)^2 + (y2 - y1)^2)
-            let dx = circleB.posX - circleA.posX;
-            let dy = circleB.posY - circleA.posY;
-            let distance = Math.sqrt(dx * dx + dy * dy);
-
-            // Condición de colisión: la distancia es menor a la suma de los radios
-            if (distance < circleA.radius + circleB.radius) {
-                circleA.isColliding = true;
-                circleB.isColliding = true;
-            }
-        }
-    }
-}
-
 // Función para animar los círculos
 function animate() {
     ctx.clearRect(0, 0, window_width, window_height); // Limpiar el canvas
 
-    // Verificar colisiones antes de actualizar y dibujar
-    checkCollisions();
+    // Reiniciar estado de colisión en cada fotograma
+    for (let i = 0; i < circles.length; i++) {
+        circles[i].isColliding = false;
+    }
 
+    // Verificar colisiones y aplicar rebotes entre cada par único de círculos
+    for (let i = 0; i < circles.length; i++) {
+        for (let j = i + 1; j < circles.length; j++) {
+            circles[i].resolveCollision(circles[j]);
+        }
+    }
+
+    // Actualizar y dibujar cada círculo
     circles.forEach(circle => {
-        circle.update(ctx); // Actualizar cada círculo
+        circle.update(ctx);
     });
 
     requestAnimationFrame(animate); // Repetir la animación
