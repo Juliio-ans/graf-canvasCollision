@@ -1,142 +1,172 @@
 const canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
 
-// Obtiene las dimensiones de la pantalla actual
-const window_height = window.innerHeight;
-const window_width = window.innerWidth;
+// Dimensiones de la pantalla
+let window_height = window.innerHeight;
+let window_width = window.innerWidth;
 canvas.height = window_height;
 canvas.width = window_width;
-canvas.style.background = "#ff8";
 
-class Circle {
-    constructor(x, y, radius, color, text, speed) {
-        this.posX = x;
-        this.posY = y;
-        this.radius = radius;
-        this.originalColor = color; // Guardamos el color original
-        this.color = color;
-        this.text = text;
-        this.speed = speed;
-        this.dx = (Math.random() - 0.5) * 2 * this.speed; // Dirección aleatoria en X
-        this.dy = (Math.random() - 0.5) * 2 * this.speed; // Dirección aleatoria en Y
-        this.isColliding = false; // Estado de colisión
+// Colección de emojis para dar variedad visual
+const EMOJIS = ["😀", "😎", "🚀", "🔥", "⭐", "🎉", "👾", "👻", "🦄", "🤖"];
+
+// Variables del juego
+let score = 0;
+let objects = [];
+const TOTAL_OBJECTS = 25;
+
+// Parámetros de física (caída libre y parábola de rebote)
+const gravity = 0.25;      // Aceleración vertical
+const bounce = -0.65;      // Pérdida de energía vertical al rebotar
+const friction = 0.98;     // Fricción horizontal para definir la parábola
+
+class FallingEmoji {
+    constructor(id) {
+        this.id = id;
+        this.size = Math.random() * 20 + 35; // Tamaño del emoji (35px a 55px)
+        this.radius = this.size / 2;         // Radio aproximado para detección de clics
+        this.resetPosition();
+    }
+
+    // Reinicia la posición arriba iniciando justo después del margen superior
+    resetPosition() {
+        this.emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+        this.posX = Math.random() * (window_width - this.size * 2) + this.size;
+        this.posY = -this.size; // Inicia arriba fuera del marco de canvas
+
+        // Reglas de velocidad según el contador de objetos eliminados
+        let speedMultiplier = 1.0;
+        if (score > 20) {
+            speedMultiplier = 2.2; // Velocidad alta
+        } else if (score > 10) {
+            speedMultiplier = 1.6; // Velocidad media
+        }
+
+        // Caída con velocidades y zonas iniciales diferentes
+        this.dy = (Math.random() * 2 + 1) * speedMultiplier;
+        this.dx = (Math.random() - 0.5) * 4 * speedMultiplier; // Inercia horizontal para la parábola
+        this.bounceCount = 0;
     }
 
     draw(context) {
-        context.beginPath();
-        
-        // Cambiar a color azul si está en colisión (efecto flash), de lo contrario usar el original
-        if (this.isColliding) {
-            context.strokeStyle = "#0000FF";
-        } else {
-            context.strokeStyle = this.originalColor;
-        }
-
+        context.save();
+        context.font = `${this.size}px Arial`;
         context.textAlign = "center";
         context.textBaseline = "middle";
-        context.font = "20px Arial";
-        context.fillText(this.text, this.posX, this.posY);
-        context.lineWidth = 2;
-        context.arc(this.posX, this.posY, this.radius, 0, Math.PI * 2, false);
-        context.stroke();
-        context.closePath();
+        context.fillText(this.emoji, this.posX, this.posY);
+        context.restore();
     }
 
     update(context) {
-        this.draw(context);
+        // Efecto de caída libre
+        this.dy += gravity;
+        this.dx *= friction;
 
-        // Actualizar la posición X
+        // Actualizar posición
         this.posX += this.dx;
-        // Cambiar la dirección si el círculo llega al borde del canvas en X
-        if (this.posX + this.radius > window_width || this.posX - this.radius < 0) {
+        this.posY += this.dy;
+
+        // Rebote en los bordes laterales del canvas
+        if (this.posX + this.radius > window_width) {
+            this.posX = window_width - this.radius;
+            this.dx = -this.dx;
+        } else if (this.posX - this.radius < 0) {
+            this.posX = this.radius;
             this.dx = -this.dx;
         }
 
-        // Actualizar la posición Y
-        this.posY += this.dy;
-        // Cambiar la dirección si el círculo llega al borde del canvas en Y
-        if (this.posY + this.radius > window_height || this.posY - this.radius < 0) {
-            this.dy = -this.dy;
+        // Rebote tipo pelota al llegar al límite inferior del canvas
+        if (this.posY + this.radius >= window_height) {
+            this.posY = window_height - this.radius;
+            this.dy *= bounce; // Invierte el sentido y reduce la fuerza generando la parábola
+            this.bounceCount++;
+
+            // Cuando pierde la fuerza o rebota demasiado, desaparece y reaparece arriba
+            if (Math.abs(this.dy) < 1.5 || this.bounceCount > 6) {
+                this.resetPosition();
+            }
         }
+
+        this.draw(context);
     }
 
-    // Método para manejar el rebote físico entre dos círculos
-    resolveCollision(other) {
-        let dx = other.posX - this.posX;
-        let dy = other.posY - this.posY;
-        let distance = Math.sqrt(dx * dx + dy * dy);
-        let minDist = this.radius + other.radius;
-
-        if (distance < minDist) {
-            // Activamos estado de colisión para el efecto "flash" azul
-            this.isColliding = true;
-            other.isColliding = true;
-
-            // Ángulo de la colisión
-            let angle = Math.atan2(dy, dx);
-
-            // Separar los círculos para evitar que se queden trabados (overlap resolution)
-            let overlap = minDist - distance;
-            let correctionX = (overlap / 2) * Math.cos(angle);
-            let correctionY = (overlap / 2) * Math.sin(angle);
-
-            this.posX -= correctionX;
-            this.posY -= correctionY;
-            other.posX += correctionX;
-            other.posY += correctionY;
-
-            // Intercambio de velocidades vectoriales para el rebote elástico (asumiendo masas iguales)
-            let tempDx = this.dx;
-            let tempDy = this.dy;
-
-            this.dx = other.dx;
-            this.dy = other.dy;
-            other.dx = tempDx;
-            other.dy = tempDy;
-        }
+    // Algoritmo para detectar clic en el emoji mediante coordenadas mouseX y mouseY
+    isClicked(mouseX, mouseY) {
+        // Distancia euclidiana entre la posición del mouse y el centro del emoji
+        let distance = Math.hypot(mouseX - this.posX, mouseY - this.posY);
+        return distance <= this.radius;
     }
 }
 
-// Crear un array para almacenar N círculos
-let circles = [];
+// Dibujar el fondo combinado con degradado tipo wallpaper
+function drawBackground() {
+    let gradient = ctx.createLinearGradient(0, 0, 0, window_height);
+    gradient.addColorStop(0, "#0f2027");
+    gradient.addColorStop(0.5, "#203a43");
+    gradient.addColorStop(1, "#2c5364");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, window_width, window_height);
+}
 
-// Función para generar círculos aleatorios
-function generateCircles(n) {
-    for (let i = 0; i < n; i++) {
-        let radius = Math.random() * 30 + 20; // Radio entre 20 y 50
-        let x = Math.random() * (window_width - radius * 2) + radius;
-        let y = Math.random() * (window_height - radius * 2) + radius;
-        let color = `#${Math.floor(Math.random() * 16777215).toString(16)}`; // Color aleatorio
-        let speed = Math.random() * 4 + 1; // Velocidad entre 1 y 5 unidades
-        let text = `C${i + 1}`; // Etiqueta del círculo
-        circles.push(new Circle(x, y, radius, color, text, speed));
+// Dibujar el contador en la parte superior derecha
+function drawScore() {
+    ctx.save();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = "bold 22px Arial";
+    ctx.textAlign = "right";
+    ctx.shadowBlur = 4;
+    ctx.shadowColor = "#000";
+    ctx.fillText(`Eliminados: ${score}`, window_width - 30, 40);
+    ctx.restore();
+}
+
+// Inicializar la lista con la cantidad fija de 25 objetos
+function initObjects() {
+    objects = [];
+    for (let i = 0; i < TOTAL_OBJECTS; i++) {
+        objects.push(new FallingEmoji(i));
     }
 }
 
-// Función para animar los círculos
+// Evento para capturar el clic izquierdo del mouse y eliminar objetos
+canvas.addEventListener("click", (event) => {
+    const rect = canvas.getBoundingClientRect();
+    
+    // Obtención de coordenadas mouseX y mouseY dentro del Canvas
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    // Recorrer los emojis para comprobar la colisión con el clic
+    for (let i = 0; i < objects.length; i++) {
+        if (objects[i].isClicked(mouseX, mouseY)) {
+            score++;                   // Incrementar contador
+            objects[i].resetPosition(); // Desaparece y vuelve a caer desde arriba
+            break;                     // Un solo objeto eliminado por clic
+        }
+    }
+});
+
+// Ajustar el canvas dinámicamente si cambia el tamaño de la ventana
+window.addEventListener("resize", () => {
+    window_height = window.innerHeight;
+    window_width = window.innerWidth;
+    canvas.height = window_height;
+    canvas.width = window_width;
+});
+
+// Bucle principal de animación
 function animate() {
-    ctx.clearRect(0, 0, window_width, window_height); // Limpiar el canvas
-
-    // Reiniciar estado de colisión en cada fotograma
-    for (let i = 0; i < circles.length; i++) {
-        circles[i].isColliding = false;
-    }
-
-    // Verificar colisiones y aplicar rebotes entre cada par único de círculos
-    for (let i = 0; i < circles.length; i++) {
-        for (let j = i + 1; j < circles.length; j++) {
-            circles[i].resolveCollision(circles[j]);
-        }
-    }
-
-    // Actualizar y dibujar cada círculo
-    circles.forEach(circle => {
-        circle.update(ctx);
+    drawBackground();
+    
+    // Renderizar y actualizar la posición de los 25 emojis
+    objects.forEach(obj => {
+        obj.update(ctx);
     });
 
-    requestAnimationFrame(animate); // Repetir la animación
+    drawScore();
+    requestAnimationFrame(animate);
 }
 
-// Generar 20 círculos y comenzar la animación
-generateCircles(20);
+// Ejecución
+initObjects();
 animate();
